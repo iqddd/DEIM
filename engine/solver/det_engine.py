@@ -21,13 +21,35 @@ from ..data import CocoEvaluator
 from ..misc import MetricLogger, SmoothedValue, dist_utils
 
 
+def set_optimizer_mode(optimizer: torch.optim.Optimizer, train: bool) -> None:
+    mode_fn = getattr(optimizer, 'train' if train else 'eval', None)
+    if callable(mode_fn):
+        mode_fn()
+
+
+def get_optimizer_stats(optimizer: torch.optim.Optimizer):
+    stats = {}
+    d_values = [pg.get('d') for pg in optimizer.param_groups if 'd' in pg]
+
+    if d_values:
+        d_values = [float(v) for v in d_values]
+        stats['optim_d'] = sum(d_values) / len(d_values)
+        stats['optim_d_max'] = max(d_values)
+
+    return stats
+
+
 def train_one_epoch(self_lr_scheduler, lr_scheduler, model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
                     device: torch.device, epoch: int, max_norm: float = 0, **kwargs):
     model.train()
     criterion.train()
+    set_optimizer_mode(optimizer, train=True)
+
     metric_logger = MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
+    metric_logger.add_meter('optim_d', SmoothedValue(window_size=1, fmt='{value:.6e}'))
+    metric_logger.add_meter('optim_d_max', SmoothedValue(window_size=1, fmt='{value:.6e}'))
     header = 'Epoch: [{}]'.format(epoch)
 
     print_freq = kwargs.get('print_freq', 10)
@@ -108,11 +130,14 @@ def train_one_epoch(self_lr_scheduler, lr_scheduler, model: torch.nn.Module, cri
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+        metric_logger.update(**get_optimizer_stats(optimizer))
 
         if writer and dist_utils.is_main_process() and global_step % 10 == 0:
             writer.add_scalar('Loss/total', loss_value.item(), global_step)
             for j, pg in enumerate(optimizer.param_groups):
                 writer.add_scalar(f'Lr/pg_{j}', pg['lr'], global_step)
+                if 'd' in pg:
+                    writer.add_scalar(f'Optim/d_pg_{j}', float(pg['d']), global_step)
             for k, v in loss_dict_reduced.items():
                 writer.add_scalar(f'Loss/{k}', v.item(), global_step)
 
@@ -123,9 +148,12 @@ def train_one_epoch(self_lr_scheduler, lr_scheduler, model: torch.nn.Module, cri
 
 
 @torch.no_grad()
-def evaluate(model: torch.nn.Module, criterion: torch.nn.Module, postprocessor, data_loader, coco_evaluator: CocoEvaluator, device):
+def evaluate(model: torch.nn.Module, criterion: torch.nn.Module, postprocessor, data_loader, coco_evaluator: CocoEvaluator, device,
+             optimizer: torch.optim.Optimizer = None):
     model.eval()
     criterion.eval()
+    if optimizer is not None:
+        set_optimizer_mode(optimizer, train=False)
     coco_evaluator.cleanup()
 
     metric_logger = MetricLogger(delimiter="  ")

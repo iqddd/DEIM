@@ -172,9 +172,17 @@ def create(type_or_name, global_cfg=GLOBAL_CONFIG, **kwargs):
     # TODO hard code
     module_kwargs = {k: v for k, v in module_kwargs.items() if not k.startswith('_')}
 
-    # TODO for **kwargs
-    # extra_args = set(module_kwargs.keys()) - set(arg_names)
-    # if len(extra_args) > 0:
-    #     raise RuntimeError(f'Error: unknown args {extra_args} for {module}')
+    sig = inspect.signature(module.__init__ if inspect.isclass(module) else module)
+    params = sig.parameters
+    accepts_var_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    if not accepts_var_kwargs:
+        valid_args = {
+            name for name, param in params.items()
+            if name != 'self' and param.kind in (
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            )
+        }
+        module_kwargs = {k: v for k, v in module_kwargs.items() if k in valid_args}
 
     return module(**module_kwargs)
