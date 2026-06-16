@@ -180,7 +180,8 @@ class BaseSolver(object):
         try:
             adjusted_state_dict = self._adjust_head_parameters(module.state_dict(), pretrain_state_dict)
             stat, infos = self._matched_state(module.state_dict(), adjusted_state_dict)
-        except Exception:
+        except Exception as exc:
+            print(f'Falling back to shape-only tuning load after head adjustment error: {exc}')
             stat, infos = self._matched_state(module.state_dict(), pretrain_state_dict)
 
         module.load_state_dict(stat, strict=False)
@@ -204,16 +205,28 @@ class BaseSolver(object):
 
     def _adjust_head_parameters(self, cur_state_dict, pretrain_state_dict):
         """Adjust head parameters between datasets."""
-        # List of parameters to adjust
-        if pretrain_state_dict['decoder.denoising_class_embed.weight'].size() != \
-                cur_state_dict['decoder.denoising_class_embed.weight'].size():
-            del pretrain_state_dict['decoder.denoising_class_embed.weight']
+        pretrain_state_dict = pretrain_state_dict.copy()
+
+        dn_name = 'decoder.denoising_class_embed.weight'
+        if dn_name in cur_state_dict and dn_name in pretrain_state_dict:
+            if pretrain_state_dict[dn_name].shape != cur_state_dict[dn_name].shape:
+                pretrain_state_dict[dn_name] = self.map_denoising_embeddings(
+                    cur_state_dict[dn_name],
+                    pretrain_state_dict[dn_name],
+                    param_name=dn_name,
+                )
 
         head_param_names = [
             'decoder.enc_score_head.weight',
             'decoder.enc_score_head.bias'
         ]
-        for i in range(8):
+
+        dec_head_indices = sorted({
+            int(name.split('.')[2])
+            for name in cur_state_dict
+            if name.startswith('decoder.dec_score_head.') and name.endswith('.weight')
+        })
+        for i in dec_head_indices:
             head_param_names.append(f'decoder.dec_score_head.{i}.weight')
             head_param_names.append(f'decoder.dec_score_head.{i}.bias')
 
@@ -223,7 +236,7 @@ class BaseSolver(object):
             if param_name in cur_state_dict and param_name in pretrain_state_dict:
                 cur_tensor = cur_state_dict[param_name]
                 pretrain_tensor = pretrain_state_dict[param_name]
-                adjusted_tensor = self.map_class_weights(cur_tensor, pretrain_tensor)
+                adjusted_tensor = self.map_class_weights(cur_tensor, pretrain_tensor, param_name=param_name)
                 if adjusted_tensor is not None:
                     pretrain_state_dict[param_name] = adjusted_tensor
                     adjusted_params.append(param_name)
@@ -232,21 +245,82 @@ class BaseSolver(object):
 
         return pretrain_state_dict
 
-    def map_class_weights(self, cur_tensor, pretrain_tensor):
+    def map_class_weights(self, cur_tensor, pretrain_tensor, param_name=''):
         """Map class weights from pretrain model to current model based on class IDs."""
-        if pretrain_tensor.size() == cur_tensor.size():
+        if pretrain_tensor.shape == cur_tensor.shape:
             return pretrain_tensor
 
+        cur_classes = cur_tensor.shape[0]
+        pretrain_classes = pretrain_tensor.shape[0]
+        coco_classes = len(self.obj365_ids)
         adjusted_tensor = cur_tensor.clone()
         adjusted_tensor.requires_grad = False
 
-        if pretrain_tensor.size() > cur_tensor.size():
+        if cur_classes == coco_classes and pretrain_classes > coco_classes:
+            print(
+                f"Adjusting '{param_name}' with Obj365->COCO mapping "
+                f"({pretrain_classes} -> {cur_classes} classes)."
+            )
             for coco_id, obj_id in enumerate(self.obj365_ids):
                 adjusted_tensor[coco_id] = pretrain_tensor[obj_id+1]
-        else:
+            return adjusted_tensor
+
+        if pretrain_classes == coco_classes and cur_classes > coco_classes:
+            print(
+                f"Adjusting '{param_name}' with COCO->Obj365 mapping "
+                f"({pretrain_classes} -> {cur_classes} classes)."
+            )
             for coco_id, obj_id in enumerate(self.obj365_ids):
                 adjusted_tensor[obj_id+1] = pretrain_tensor[coco_id]
+            return adjusted_tensor
 
+        template = pretrain_tensor.mean(dim=0, keepdim=True)
+        adjusted_tensor.copy_(template.expand_as(adjusted_tensor))
+        print(
+            f"Adjusting '{param_name}' with generic repeated init "
+            f"({pretrain_classes} -> {cur_classes} classes)."
+        )
+
+        return adjusted_tensor
+
+    def map_denoising_embeddings(self, cur_tensor, pretrain_tensor, param_name=''):
+        """Map denoising class embeddings while preserving the padding row."""
+        if pretrain_tensor.shape == cur_tensor.shape:
+            return pretrain_tensor
+
+        cur_classes = cur_tensor.shape[0] - 1
+        pretrain_classes = pretrain_tensor.shape[0] - 1
+        coco_classes = len(self.obj365_ids)
+        adjusted_tensor = cur_tensor.clone()
+        adjusted_tensor.requires_grad = False
+
+        # Preserve the padding row when shapes are compatible.
+        adjusted_tensor[-1] = pretrain_tensor[-1]
+
+        if cur_classes == coco_classes and pretrain_classes > coco_classes:
+            print(
+                f"Adjusting '{param_name}' with Obj365->COCO mapping "
+                f"({pretrain_classes} -> {cur_classes} classes)."
+            )
+            for coco_id, obj_id in enumerate(self.obj365_ids):
+                adjusted_tensor[coco_id] = pretrain_tensor[obj_id + 1]
+            return adjusted_tensor
+
+        if pretrain_classes == coco_classes and cur_classes > coco_classes:
+            print(
+                f"Adjusting '{param_name}' with COCO->Obj365 mapping "
+                f"({pretrain_classes} -> {cur_classes} classes)."
+            )
+            for coco_id, obj_id in enumerate(self.obj365_ids):
+                adjusted_tensor[obj_id + 1] = pretrain_tensor[coco_id]
+            return adjusted_tensor
+
+        template = pretrain_tensor[:-1].mean(dim=0, keepdim=True)
+        adjusted_tensor[:-1].copy_(template.expand_as(adjusted_tensor[:-1]))
+        print(
+            f"Adjusting '{param_name}' with generic repeated init "
+            f"({pretrain_classes} -> {cur_classes} classes)."
+        )
         return adjusted_tensor
 
     def fit(self):

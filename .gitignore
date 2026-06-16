@@ -136,3 +136,8 @@ dmypy.json
 *.zip
 *.html
 .DS_Store
+
+# Local experiment artifacts
+deim_outputs/
+debug_eval_current/
+torch_results.jpg

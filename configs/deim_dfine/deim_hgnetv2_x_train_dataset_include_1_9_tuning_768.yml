@@ -1,0 +1,32 @@
+__include__: [
+  './deim_hgnetv2_x_train_dataset_include_1_9_tuning.yml'
+]
+
+output_dir: ./deim_outputs/deim_hgnetv2_x_train_dataset_include_1_9_tuning_768
+
+eval_spatial_size: [768, 768]
+
+train_dataloader:
+  dataset:
+    transforms:
+      ops:
+        - {type: Mosaic, output_size: 384, rotation_range: 10, translation_range: [0.1, 0.1], scaling_range: [0.5, 1.5],
+           probability: 1.0, fill_value: 0, use_cache: False, max_cached_images: 50, random_pop: True}
+        - {type: RandomPhotometricDistort, p: 0.3}
+        - {type: RandomZoomOut, fill: 0}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: RandomHorizontalFlip}
+        - {type: Resize, size: [768, 768], }
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+
+  collate_fn:
+    base_size: 768
+
+val_dataloader:
+  dataset:
+    transforms:
+      ops:
+        - {type: Resize, size: [768, 768], }
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}

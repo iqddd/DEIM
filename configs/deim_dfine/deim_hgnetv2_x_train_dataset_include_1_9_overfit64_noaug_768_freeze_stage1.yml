@@ -1,0 +1,41 @@
+__include__: [
+  './deim_hgnetv2_x_train_dataset_include_1_9_tuning_768_freeze_stage1.yml'
+]
+
+output_dir: ./deim_outputs/overfit/deim_hgnetv2_x_train_dataset_include_1_9_overfit64_noaug_768_freeze_stage1
+
+use_ema: False
+epoches: 30
+warmup_iter: 1
+
+train_dataloader:
+  total_batch_size: 8
+  dataset:
+    img_folder: /workspace/train_dataset/images/train
+    ann_file: /workspace/train_dataset/annotations_include_1_9/instances_train_overfit64.json
+    transforms:
+      ops:
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: Resize, size: [768, 768]}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+      policy:
+        name: default
+  shuffle: True
+  collate_fn:
+    base_size: 768
+    base_size_repeat: ~
+    mixup_prob: 0.0
+    mixup_epochs: [0, 0]
+    stop_epoch: 9999
+
+val_dataloader:
+  total_batch_size: 64
+  dataset:
+    img_folder: /workspace/train_dataset/images/train
+    ann_file: /workspace/train_dataset/annotations_include_1_9/instances_train_overfit64.json
+    transforms:
+      ops:
+        - {type: Resize, size: [768, 768]}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}

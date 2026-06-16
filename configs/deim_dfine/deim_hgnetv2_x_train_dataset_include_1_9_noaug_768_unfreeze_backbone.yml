@@ -1,0 +1,43 @@
+__include__: [
+  './deim_hgnetv2_x_train_dataset_include_1_9_tuning_768_freeze_stage1.yml'
+]
+
+output_dir: ./deim_outputs/baselines/deim_hgnetv2_x_train_dataset_include_1_9_noaug_768_unfreeze_backbone
+
+use_ema: False
+epoches: 48
+
+HGNetv2:
+  freeze_stem_only: False
+  freeze_at: -1
+  freeze_norm: True
+
+train_dataloader:
+  total_batch_size: 16
+  num_workers: 8
+  dataset:
+    transforms:
+      ops:
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: RandomHorizontalFlip}
+        - {type: Resize, size: [768, 768]}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+      policy: ~
+      mosaic_prob: -0.1
+  collate_fn:
+    base_size: 768
+    base_size_repeat: ~
+    mixup_prob: 0.0
+    mixup_epochs: [0, 0]
+    stop_epoch: 9999
+
+val_dataloader:
+  total_batch_size: 64
+  num_workers: 8
+  dataset:
+    transforms:
+      ops:
+        - {type: Resize, size: [768, 768]}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}

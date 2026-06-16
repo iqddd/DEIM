@@ -276,6 +276,13 @@ class DEIMCriterion(nn.Module):
         indices = self.matcher(outputs_without_aux, targets)['indices']
         self._clear_cache()
 
+        class_agnostic = outputs.get('enc_meta', {}).get('class_agnostic', False)
+        enc_targets = targets
+        if class_agnostic:
+            enc_targets = copy.deepcopy(targets)
+            for t in enc_targets:
+                t['labels'] = torch.zeros_like(t['labels'])
+
         # Get the matching union set across all decoder layers.
         if 'aux_outputs' in outputs:
             indices_aux_list, cached_indices, cached_indices_enc = [], [], []
@@ -287,7 +294,7 @@ class DEIMCriterion(nn.Module):
                 cached_indices.append(indices_aux)
                 indices_aux_list.append(indices_aux)
             for i, aux_outputs in enumerate(outputs['enc_aux_outputs']):
-                indices_enc = self.matcher(aux_outputs, targets)['indices']
+                indices_enc = self.matcher(aux_outputs, enc_targets)['indices']
                 cached_indices_enc.append(indices_enc)
                 indices_aux_list.append(indices_enc)
             indices_go = self._get_go_indices(indices, indices_aux_list)
@@ -354,15 +361,9 @@ class DEIMCriterion(nn.Module):
         # In case of encoder auxiliary losses.
         if 'enc_aux_outputs' in outputs:
             assert 'enc_meta' in outputs, ''
-            class_agnostic = outputs['enc_meta']['class_agnostic']
             if class_agnostic:
                 orig_num_classes = self.num_classes
                 self.num_classes = 1
-                enc_targets = copy.deepcopy(targets)
-                for t in enc_targets:
-                    t['labels'] = torch.zeros_like(t["labels"])
-            else:
-                enc_targets = targets
 
             for i, aux_outputs in enumerate(outputs['enc_aux_outputs']):
                 for loss in self.losses:
