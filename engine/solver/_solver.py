@@ -1,3 +1,5 @@
+import re
+
 import torch
 import torch.nn as nn
 
@@ -50,6 +52,10 @@ class BaseSolver(object):
         if self.cfg.tuning:
             print(f'Tuning checkpoint from {self.cfg.tuning}')
             self.load_tuning_state(self.cfg.tuning)
+
+        freeze_patterns = cfg.yaml_cfg.get('freeze_patterns', None)
+        if freeze_patterns:
+            self.apply_freeze_patterns(self.model, freeze_patterns)
 
         self.model = dist_utils.warp_model(
             self.model.to(device), sync_bn=cfg.sync_bn, find_unused_parameters=cfg.find_unused_parameters
@@ -186,6 +192,34 @@ class BaseSolver(object):
 
         module.load_state_dict(stat, strict=False)
         print(f'Load model.state_dict, {infos}')
+
+    @staticmethod
+    def apply_freeze_patterns(module: nn.Module, patterns):
+        if isinstance(patterns, str):
+            patterns = [patterns]
+
+        compiled = [re.compile(pattern) for pattern in patterns]
+        matched = []
+        frozen_params = 0
+
+        for name, param in module.named_parameters():
+            if any(pattern.search(name) for pattern in compiled):
+                if param.requires_grad:
+                    param.requires_grad = False
+                    frozen_params += param.numel()
+                matched.append(name)
+
+        if matched:
+            print(
+                f'Freeze patterns applied: matched {len(matched)} tensors, '
+                f'frozen {frozen_params} parameters'
+            )
+            for pattern in patterns:
+                print(f'  - {pattern}')
+        else:
+            print('Freeze patterns applied, but no parameters matched:')
+            for pattern in patterns:
+                print(f'  - {pattern}')
 
     @staticmethod
     def _matched_state(state: Dict[str, torch.Tensor], params: Dict[str, torch.Tensor]):

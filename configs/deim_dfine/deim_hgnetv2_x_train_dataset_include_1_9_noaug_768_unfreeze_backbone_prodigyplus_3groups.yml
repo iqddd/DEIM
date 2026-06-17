@@ -1,0 +1,20 @@
+__include__: [
+  './deim_hgnetv2_x_train_dataset_include_1_9_noaug_768_unfreeze_backbone_prodigyplus.yml'
+]
+
+output_dir: ./deim_outputs/baselines/deim_hgnetv2_x_train_dataset_include_1_9_noaug_768_unfreeze_backbone_prodigyplus_3groups
+
+optimizer:
+  type: ProdigyPlusScheduleFree
+  lr: 1.0
+  betas: [0.9, 0.99]
+  weight_decay: 0.000125
+  d0: 0.0000001
+  use_schedulefree: True
+  split_groups: True
+  split_groups_mean: False
+  use_stableadamw: True
+  params:
+    - params: '^backbone\.'
+    - params: '^decoder\.decoder\.layers\.'
+    - params: '^(?!decoder\.decoder\.layers\.)(?=.*(?:encoder|decoder)).*$'

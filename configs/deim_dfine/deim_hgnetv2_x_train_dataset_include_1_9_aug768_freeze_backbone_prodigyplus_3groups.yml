@@ -1,0 +1,15 @@
+__include__: [
+  './deim_hgnetv2_x_train_dataset_include_1_9_aug768_unfreeze_backbone_prodigyplus_3groups.yml'
+]
+
+output_dir: ./deim_outputs/baselines/deim_hgnetv2_x_train_dataset_include_1_9_aug768_freeze_backbone_prodigyplus_3groups
+
+HGNetv2:
+  freeze_stem_only: False
+  freeze_at: 3
+  freeze_norm: True
+
+optimizer:
+  params:
+    - params: '^decoder\.decoder\.layers\.'
+    - params: '^(?!decoder\.decoder\.layers\.)(?=.*(?:encoder|decoder)).*$'

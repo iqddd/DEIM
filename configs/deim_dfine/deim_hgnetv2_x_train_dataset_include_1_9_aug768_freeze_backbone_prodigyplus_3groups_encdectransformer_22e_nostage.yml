@@ -1,0 +1,13 @@
+__include__: [
+  './deim_hgnetv2_x_train_dataset_include_1_9_aug768_freeze_backbone_prodigyplus_3groups_40e_nostage.yml'
+]
+
+output_dir: ./deim_outputs/baselines/deim_hgnetv2_x_train_dataset_include_1_9_aug768_freeze_backbone_prodigyplus_3groups_encdectransformer_22e_nostage
+
+epoches: 22
+
+optimizer:
+  params:
+    - params: '^encoder\.'
+    - params: '^(?!decoder\.decoder\.layers\.)(?=.*decoder).*$'
+    - params: '^decoder\.decoder\.layers\.'

@@ -1,0 +1,9 @@
+__include__: [
+  './deim_hgnetv2_x_train_dataset_include_1_9_aug768_unfreeze_backbone_prodigyplus_3groups.yml'
+]
+
+output_dir: ./deim_outputs/baselines/deim_hgnetv2_x_train_dataset_include_1_9_aug768_unfreeze_backbone_prodigyplus_3groups_nostage
+
+train_dataloader:
+  collate_fn:
+    stop_epoch: 9999
